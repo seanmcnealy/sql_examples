@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS account (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name TEXT,
+    balance DECIMAL,
+    timestamp TIMESTAMP DEFAULT NOW()
+);
