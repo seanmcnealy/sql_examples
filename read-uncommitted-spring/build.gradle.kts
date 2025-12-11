@@ -1,7 +1,7 @@
 plugins {
     id("java")
     `java-library`
-    id("org.springframework.boot") version "3.5.5"
+    id("org.springframework.boot") version "3.5.5" apply false
     id("io.spring.dependency-management") version "1.1.7"
 }
 
@@ -42,4 +42,14 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+dependencyManagement {
+    imports {
+        mavenBom(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+    }
+}
+
+tasks.compileJava.configure {
+    options.compilerArgs.add("-parameters")
 }
