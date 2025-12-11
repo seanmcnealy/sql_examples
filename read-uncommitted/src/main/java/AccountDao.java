@@ -4,8 +4,19 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 
+/**
+ * DAO for accounts and their balances. Allows for creating accounts, getting balances, and moving money between accounts.
+ * @param dataSource Database configuration that creates Connections.
+ * @param isolationLevel This one is weird as a parameter, but for this example we want to test different isolation levels.
+ */
 public record AccountDao(DataSource dataSource, int isolationLevel) {
 
+    /**
+     * Creates a new account.
+     * @param name Something to identify the account, but not important.
+     * @param balance Initial balance.
+     * @return Account ID.
+     */
     public long createAccount(String name, BigDecimal balance) {
         try (final Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);
@@ -25,6 +36,9 @@ public record AccountDao(DataSource dataSource, int isolationLevel) {
         }
     }
 
+    /**
+     * Gets the balance of an account.
+     */
     public BigDecimal getBalance(long accountId) {
         try (final Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);
@@ -44,6 +58,9 @@ public record AccountDao(DataSource dataSource, int isolationLevel) {
         }
     }
 
+    /**
+     * Moves an amount from one account to another. Uses one transaction to decrement an account and increment another.
+     */
     public void moveAmount(long fromAccountId, long toAccountId, BigDecimal amount) {
         try (final Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);
@@ -65,6 +82,10 @@ public record AccountDao(DataSource dataSource, int isolationLevel) {
         }
     }
 
+    /**
+     * Gets the total balance of all accounts.
+     * NOTE: This function has interesting behavior based on the isolation level.
+     */
     public BigDecimal getTotalBalances() {
         try (final Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);

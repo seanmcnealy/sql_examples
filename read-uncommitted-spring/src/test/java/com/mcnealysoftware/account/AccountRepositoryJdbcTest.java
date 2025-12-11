@@ -1,13 +1,21 @@
+package com.mcnealysoftware.account;
+
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
-import javax.sql.DataSource;
 import java.math.BigDecimal;
-import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.LinkedList;
 import java.util.Optional;
@@ -17,47 +25,64 @@ import java.util.concurrent.Executors;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
-public class AccountDaoTest {
-    @FunctionalInterface
-    public interface CheckedConsumer<T> {
-        void accept(T t) throws SQLException;
+@SpringBootTest
+@Testcontainers
+public class AccountRepositoryJdbcTest {
+
+    @Container
+    private static final MySQLContainer database = new MySQLContainer(DockerImageName.parse("mysql:8.0.36"));
+
+    @DynamicPropertySource
+    static void databaseProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", database::getJdbcUrl);
+        registry.add("spring.datasource.username", database::getUsername);
+        registry.add("spring.datasource.password", database::getPassword);
+        registry.add("spring.datasource.driver-class-name", database::getDriverClassName);
     }
 
-    private void setup(CheckedConsumer<DataSource> f) throws SQLException {
-        try(final var mysql = new MySQLContainer(DockerImageName.parse("mysql:8.0.36"))) {
-            mysql.start();
-            final var config = new HikariConfig();
-            config.setJdbcUrl(mysql.getJdbcUrl());
-            config.setUsername(mysql.getUsername());
-            config.setPassword(mysql.getPassword());
-            config.setDriverClassName(mysql.getDriverClassName());
-            try(var datasource = new HikariDataSource(config)) {
-                final var flyway = Flyway.configure()
-                        .dataSource(datasource).locations("classpath:schema").load();
-                flyway.migrate();
-                f.accept(datasource);
+    @Autowired
+    AccountRepositoryJdbc dao;
+
+    @BeforeEach
+    void setUp() {
+        final var config = new HikariConfig();
+        config.setJdbcUrl(database.getJdbcUrl());
+        config.setUsername(database.getUsername());
+        config.setPassword(database.getPassword());
+        config.setDriverClassName(database.getDriverClassName());
+        try(var datasource = new HikariDataSource(config)) {
+            final var flyway = Flyway.configure()
+                    .dataSource(datasource).locations("classpath:schema").load();
+            flyway.migrate();
+        }
+    }
+
+    @AfterEach
+    void tearDown() throws SQLException {
+        final var config = new HikariConfig();
+        config.setJdbcUrl(database.getJdbcUrl());
+        config.setUsername(database.getUsername());
+        config.setPassword(database.getPassword());
+        config.setDriverClassName(database.getDriverClassName());
+        try(var datasource = new HikariDataSource(config)) {
+            try(var connection = datasource.getConnection()){
+                connection.createStatement().execute("DROP TABLE account;");
+                connection.createStatement().execute("DROP TABLE flyway_schema_history;");
             }
         }
     }
 
     @Test
-    void createAccountTest() throws SQLException {
-        setup(connection -> {
-            final var dao = new AccountDao(connection, Connection.TRANSACTION_READ_UNCOMMITTED);
+    void createAccountTest() {
+        final var alice = dao.createAccount("Alice", BigDecimal.valueOf(1000L));
+        final var bob = dao.createAccount("Bob", BigDecimal.valueOf(2000L));
 
-            final var alice = dao.createAccount("Alice", BigDecimal.valueOf(1000L));
-            final var bob = dao.createAccount("Bob", BigDecimal.valueOf(2000L));
-
-            assertEquals(1, alice);
-            assertEquals(2, bob);
-        });
+        assertEquals(1, alice);
+        assertEquals(2, bob);
     }
 
     @Test
-    void moveAccountTest() throws SQLException {
-        setup(connection -> {
-            final var dao = new AccountDao(connection, Connection.TRANSACTION_READ_UNCOMMITTED);
-
+    void moveAccountTest() {
             final var alice = dao.createAccount("Alice", BigDecimal.valueOf(1000L));
             final var bob = dao.createAccount("Bob", BigDecimal.valueOf(2000L));
 
@@ -66,14 +91,10 @@ public class AccountDaoTest {
             assertEquals(900L, dao.getBalance(alice).longValue());
             assertEquals( 2100L, dao.getBalance(bob).longValue());
             assertEquals(3000L, dao.getTotalBalances().longValue());
-        });
     }
 
     @Test
-    void moveAccountTestConcurrentReadUncommitted() throws SQLException {
-        setup(connection -> {
-            final var dao = new AccountDao(connection, Connection.TRANSACTION_READ_UNCOMMITTED);
-
+    void moveAccountTestConcurrentReadUncommitted() {
             final var alice = dao.createAccount("Alice", BigDecimal.valueOf(1000L));
             final var bob = dao.createAccount("Bob", BigDecimal.valueOf(2000L));
 
@@ -96,14 +117,10 @@ public class AccountDaoTest {
             assertEquals(2100L, dao.getBalance(bob).longValue());
             assertEquals(3000L, dao.getTotalBalances().longValue());
             assertNotEquals(Optional.of(30000L), totals.stream().reduce(BigDecimal::add).map(BigDecimal::longValue));
-        });
     }
 
     @Test
-    void moveAccountTestConcurrentReadCommitted() throws SQLException {
-        setup(connection -> {
-            final var dao = new AccountDao(connection, Connection.TRANSACTION_READ_COMMITTED);
-
+    void moveAccountTestConcurrentReadCommitted() {
             final var alice = dao.createAccount("Alice", BigDecimal.valueOf(1000L));
             final var bob = dao.createAccount("Bob", BigDecimal.valueOf(2000L));
 
@@ -114,7 +131,7 @@ public class AccountDaoTest {
                     executor.submit(() -> dao.moveAmount(alice, bob, BigDecimal.valueOf(1L)));
                     if( i % 10 == 0) {
                         executor.submit(() -> {
-                            totals.add(dao.getTotalBalances());
+                            totals.add(dao.getTotalBalancesCommitted());
                         });
                     }
                 }
@@ -126,6 +143,5 @@ public class AccountDaoTest {
             assertEquals(2100L, dao.getBalance(bob).longValue());
             assertEquals(3000L, dao.getTotalBalances().longValue());
             assertEquals(Optional.of(30000L), totals.stream().reduce(BigDecimal::add).map(BigDecimal::longValue));
-        });
     }
 }
