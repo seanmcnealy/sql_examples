@@ -1,8 +1,6 @@
 package com.mcnealysoftware.serializable.account;
 
-import jakarta.persistence.LockModeType;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -64,7 +62,6 @@ public class AccountRepositoryJdbc {
     }
 
     @Transactional(readOnly = false, isolation = Isolation.SERIALIZABLE)
-    @Lock(LockModeType.PESSIMISTIC_READ)
     public void moveAmountSerializable(long fromAccountId, long toAccountId, BigDecimal amount) {
         final var fromBalance = jdbcTemplate.queryForObject("SELECT balance FROM account WHERE id = ? FOR UPDATE", BigDecimal.class, fromAccountId);
         jdbcTemplate.update("UPDATE account SET balance = ? WHERE id = ?", fromBalance.add(amount.negate()), fromAccountId);
@@ -79,7 +76,6 @@ public class AccountRepositoryJdbc {
     }
 
     @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
     public BigDecimal getTotalBalancesCommitted() {
         return jdbcTemplate.queryForObject("SELECT SUM(balance) FROM account;", BigDecimal.class);
     }
