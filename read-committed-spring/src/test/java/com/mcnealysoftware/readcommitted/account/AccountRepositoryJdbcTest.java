@@ -21,6 +21,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -81,7 +82,7 @@ public class AccountRepositoryJdbcTest {
     }
 
     @Test
-    void createAccountTestConcurrentReadCommitted() {
+    void createAccountTestConcurrentReadCommitted() throws InterruptedException {
             final var names = List.of("Alice", "Bob", "Charlie", "David", "Eddie", "Frank", "George", "Harry", "Ivan", "John");
 
             final var totals = new LinkedList<List<Long>>();
@@ -99,6 +100,7 @@ public class AccountRepositoryJdbcTest {
                 }
 
                 executor.shutdown();
+                executor.awaitTermination(100, TimeUnit.SECONDS);
             }
 
             final var accounts = dao.getAccounts(0, 200);
@@ -115,7 +117,7 @@ public class AccountRepositoryJdbcTest {
     }
 
     @Test
-    void createAccountTestConcurrentRepeatableRead() {
+    void createAccountTestConcurrentRepeatableRead() throws InterruptedException {
             final var names = List.of("Alice", "Bob", "Charlie", "David", "Eddie", "Frank", "George", "Harry", "Ivan", "John");
 
             final var totals = new LinkedList<List<Long>>();
@@ -133,6 +135,7 @@ public class AccountRepositoryJdbcTest {
                 }
 
                 executor.shutdown();
+                executor.awaitTermination(100, TimeUnit.SECONDS);
             }
 
             final var accounts = dao.getAccounts(0, 200);

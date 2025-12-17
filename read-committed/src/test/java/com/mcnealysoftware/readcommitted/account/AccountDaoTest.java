@@ -15,6 +15,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -22,10 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 public class AccountDaoTest {
     @FunctionalInterface
     public interface CheckedConsumer<T> {
-        void accept(T t) throws SQLException;
+        void accept(T t) throws SQLException, InterruptedException;
     }
 
-    private void setup(CheckedConsumer<DataSource> f) throws SQLException {
+    private void setup(CheckedConsumer<DataSource> f) throws SQLException, InterruptedException {
         try(final var mysql = new MySQLContainer(DockerImageName.parse("mysql:8.0.36"))) {
             mysql.start();
             final var config = new HikariConfig();
@@ -43,7 +44,7 @@ public class AccountDaoTest {
     }
 
     @Test
-    void createAccountTest() throws SQLException {
+    void createAccountTest() throws SQLException, InterruptedException {
         setup(connection -> {
             final var dao = new AccountDao(connection, Connection.TRANSACTION_READ_UNCOMMITTED);
 
@@ -56,7 +57,7 @@ public class AccountDaoTest {
     }
 
     @Test
-    void createAccountTestConcurrentReadCommitted() throws SQLException {
+    void createAccountTestConcurrentReadCommitted() throws SQLException, InterruptedException {
         setup(connection -> {
             final var dao = new AccountDao(connection, Connection.TRANSACTION_READ_COMMITTED);
 
@@ -77,6 +78,7 @@ public class AccountDaoTest {
                 }
 
                 executor.shutdown();
+                executor.awaitTermination(100, TimeUnit.SECONDS);
             }
 
             final var accounts = dao.getAccounts(0, 200);
@@ -94,7 +96,7 @@ public class AccountDaoTest {
     }
 
     @Test
-    void createAccountTestConcurrentRepeatableRead() throws SQLException {
+    void createAccountTestConcurrentRepeatableRead() throws SQLException, InterruptedException {
         setup(connection -> {
             final var dao = new AccountDao(connection, Connection.TRANSACTION_REPEATABLE_READ);
 
@@ -115,6 +117,7 @@ public class AccountDaoTest {
                 }
 
                 executor.shutdown();
+                executor.awaitTermination(100, TimeUnit.SECONDS);
             }
 
             final var accounts = dao.getAccounts(0, 200);

@@ -15,6 +15,7 @@ import java.util.LinkedList;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -22,10 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 public class AccountDaoTest {
     @FunctionalInterface
     public interface CheckedConsumer<T> {
-        void accept(T t) throws SQLException;
+        void accept(T t) throws SQLException, InterruptedException;
     }
 
-    private void setup(CheckedConsumer<DataSource> f) throws SQLException {
+    private void setup(CheckedConsumer<DataSource> f) throws SQLException, InterruptedException {
         try(final var mysql = new MySQLContainer(DockerImageName.parse("mysql:8.0.36"))) {
             mysql.start();
             final var config = new HikariConfig();
@@ -43,7 +44,7 @@ public class AccountDaoTest {
     }
 
     @Test
-    void createAccountTest() throws SQLException {
+    void createAccountTest() throws SQLException, InterruptedException {
         setup(connection -> {
             final var dao = new AccountDao(connection, Connection.TRANSACTION_READ_UNCOMMITTED);
 
@@ -56,7 +57,7 @@ public class AccountDaoTest {
     }
 
     @Test
-    void moveAccountTest() throws SQLException {
+    void moveAccountTest() throws SQLException, InterruptedException {
         setup(connection -> {
             final var dao = new AccountDao(connection, Connection.TRANSACTION_READ_UNCOMMITTED);
 
@@ -72,7 +73,7 @@ public class AccountDaoTest {
     }
 
     @Test
-    void moveAccountTestConcurrentReadUncommitted() throws SQLException {
+    void moveAccountTestConcurrentReadUncommitted() throws SQLException, InterruptedException {
         setup(connection -> {
             final var dao = new AccountDao(connection, Connection.TRANSACTION_READ_UNCOMMITTED);
 
@@ -92,6 +93,7 @@ public class AccountDaoTest {
                 }
 
                 executor.shutdown();
+                executor.awaitTermination(100, TimeUnit.SECONDS);
             }
 
             assertEquals(900L, dao.getBalance(alice).longValue());
@@ -102,7 +104,7 @@ public class AccountDaoTest {
     }
 
     @Test
-    void moveAccountTestConcurrentReadCommitted() throws SQLException {
+    void moveAccountTestConcurrentReadCommitted() throws SQLException, InterruptedException {
         setup(connection -> {
             final var dao = new AccountDao(connection, Connection.TRANSACTION_READ_COMMITTED);
 
@@ -122,6 +124,7 @@ public class AccountDaoTest {
                 }
 
                 executor.shutdown();
+                executor.awaitTermination(100, TimeUnit.SECONDS);
             }
 
             assertEquals(900L, dao.getBalance(alice).longValue());

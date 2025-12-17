@@ -21,6 +21,7 @@ import java.util.LinkedList;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -94,7 +95,7 @@ public class AccountRepositoryEntityManagerTest {
     }
 
     @Test
-    void moveAccountTestConcurrentReadUncommitted() {
+    void moveAccountTestConcurrentReadUncommitted() throws InterruptedException {
             final var alice = dao.createAccount("Alice", BigDecimal.valueOf(1000L));
             final var bob = dao.createAccount("Bob", BigDecimal.valueOf(2000L));
 
@@ -111,6 +112,7 @@ public class AccountRepositoryEntityManagerTest {
                 }
 
                 executor.shutdown();
+                executor.awaitTermination(100, TimeUnit.SECONDS);
             }
 
             assertEquals(900L, dao.getBalance(alice).longValue());
@@ -120,7 +122,7 @@ public class AccountRepositoryEntityManagerTest {
     }
 
     @Test
-    void moveAccountTestConcurrentReadCommitted() {
+    void moveAccountTestConcurrentReadCommitted() throws InterruptedException {
             final var alice = dao.createAccount("Alice", BigDecimal.valueOf(1000L));
             final var bob = dao.createAccount("Bob", BigDecimal.valueOf(2000L));
 
@@ -137,6 +139,7 @@ public class AccountRepositoryEntityManagerTest {
                 }
 
                 executor.shutdown();
+                executor.awaitTermination(100, TimeUnit.SECONDS);
             }
 
             assertEquals(900L, dao.getBalance(alice).longValue());
