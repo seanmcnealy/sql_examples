@@ -21,6 +21,7 @@ import java.util.LinkedList;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -31,6 +32,8 @@ public class AccountRepositoryEntityManagerTest {
 
     @Container
     private static final MySQLContainer database = new MySQLContainer(DockerImageName.parse("mysql:8.0.36"));
+    @Autowired
+    AccountRepositoryEntityManager dao;
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
@@ -40,9 +43,6 @@ public class AccountRepositoryEntityManagerTest {
         registry.add("spring.datasource.driver-class-name", database::getDriverClassName);
     }
 
-    @Autowired
-    AccountRepositoryEntityManager dao;
-
     @BeforeEach
     void setUp() {
         final var config = new HikariConfig();
@@ -50,7 +50,7 @@ public class AccountRepositoryEntityManagerTest {
         config.setUsername(database.getUsername());
         config.setPassword(database.getPassword());
         config.setDriverClassName(database.getDriverClassName());
-        try(var datasource = new HikariDataSource(config)) {
+        try (var datasource = new HikariDataSource(config)) {
             final var flyway = Flyway.configure()
                     .dataSource(datasource).locations("classpath:schema").load();
             flyway.migrate();
@@ -64,28 +64,34 @@ public class AccountRepositoryEntityManagerTest {
         config.setUsername(database.getUsername());
         config.setPassword(database.getPassword());
         config.setDriverClassName(database.getDriverClassName());
-        try(var datasource = new HikariDataSource(config)) {
-            try(var connection = datasource.getConnection()){
-                connection.createStatement().execute("DROP TABLE account;");
-                connection.createStatement().execute("DROP TABLE flyway_schema_history;");
+        try (var datasource = new HikariDataSource(config)) {
+            try (var connection = datasource.getConnection()) {
+                connection.createStatement().execute("DROP TABLE account");
+                connection.createStatement().execute("DROP TABLE flyway_schema_history");
             }
         }
     }
 
     @Test
-    void moveAccountTestConcurrentSerializable() throws InterruptedException {
+    void moveAccountTestConcurrentSerializableDeadlocks() throws InterruptedException {
         final var alice = dao.createAccount("Alice", BigDecimal.valueOf(1000L));
         final var bob = dao.createAccount("Bob", BigDecimal.valueOf(2000L));
 
-        final var totals = new LinkedList<BigDecimal>();
+        var totals = new LinkedList<Future<BigDecimal>>();
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             for (int i = 0; i < 100; i++) {
-                executor.submit(() -> dao.moveAmountSerializable(alice, bob, BigDecimal.valueOf(1L)));
-                if( i % 10 == 0) {
-                    executor.submit(() -> {
-                        totals.add(dao.getTotalBalancesCommitted());
-                    });
+                executor.submit(() -> {
+                    try {
+                        dao.moveAmountSerializableDeadlocks(alice, bob, BigDecimal.valueOf(1L));
+                    } catch (Exception e) {
+                        System.out.println(e.getMessage());
+                    }
+                });
+                if (i % 10 == 0) {
+                    totals.add(executor.submit(() ->
+                            dao.getTotalBalancesCommitted()
+                    ));
                 }
             }
 
@@ -96,6 +102,45 @@ public class AccountRepositoryEntityManagerTest {
         assertEquals(900L, dao.getBalance(alice).longValue());
         assertEquals(2100L, dao.getBalance(bob).longValue());
         assertEquals(3000L, dao.getTotalBalances().longValue());
-        assertEquals(Optional.of(30000L), totals.stream().reduce(BigDecimal::add).map(BigDecimal::longValue));
+        assertEquals(Optional.of(30000L), totals.stream().map(f -> {
+            try {
+                return f.get();
+            } catch (Exception e) {
+                return BigDecimal.ZERO;
+            }
+        }).reduce(BigDecimal::add).map(BigDecimal::longValue));
+    }
+
+    @Test
+    void moveAccountTestConcurrentSerializable() throws InterruptedException {
+        final var alice = dao.createAccount("Alice", BigDecimal.valueOf(1000L));
+        final var bob = dao.createAccount("Bob", BigDecimal.valueOf(2000L));
+
+        final var totals = new LinkedList<Future<BigDecimal>>();
+
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            for (int i = 0; i < 100; i++) {
+                executor.submit(() -> dao.moveAmountSerializable(alice, bob, BigDecimal.valueOf(1L)));
+                if (i % 10 == 0) {
+                    totals.add(executor.submit(() ->
+                            dao.getTotalBalancesCommitted()
+                    ));
+                }
+            }
+
+            executor.shutdown();
+            executor.awaitTermination(100, TimeUnit.SECONDS);
+        }
+
+        assertEquals(900L, dao.getBalance(alice).longValue());
+        assertEquals(2100L, dao.getBalance(bob).longValue());
+        assertEquals(3000L, dao.getTotalBalances().longValue());
+        assertEquals(Optional.of(30000L), totals.stream().map(f -> {
+            try {
+                return f.get();
+            } catch (Exception e) {
+                return BigDecimal.ZERO;
+            }
+        }).reduce(BigDecimal::add).map(BigDecimal::longValue));
     }
 }

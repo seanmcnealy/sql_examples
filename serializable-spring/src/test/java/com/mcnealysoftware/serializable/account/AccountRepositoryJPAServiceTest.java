@@ -21,6 +21,7 @@ import java.util.LinkedList;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -31,6 +32,8 @@ public class AccountRepositoryJPAServiceTest {
 
     @Container
     private static final MySQLContainer database = new MySQLContainer(DockerImageName.parse("mysql:8.0.36"));
+    @Autowired
+    AccountRepositoryJPAService dao;
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
@@ -40,9 +43,6 @@ public class AccountRepositoryJPAServiceTest {
         registry.add("spring.datasource.driver-class-name", database::getDriverClassName);
     }
 
-    @Autowired
-    AccountRepositoryJPAService dao;
-
     @BeforeEach
     void setUp() {
         final var config = new HikariConfig();
@@ -50,7 +50,7 @@ public class AccountRepositoryJPAServiceTest {
         config.setUsername(database.getUsername());
         config.setPassword(database.getPassword());
         config.setDriverClassName(database.getDriverClassName());
-        try(var datasource = new HikariDataSource(config)) {
+        try (var datasource = new HikariDataSource(config)) {
             final var flyway = Flyway.configure()
                     .dataSource(datasource).locations("classpath:schema").load();
             flyway.migrate();
@@ -64,10 +64,10 @@ public class AccountRepositoryJPAServiceTest {
         config.setUsername(database.getUsername());
         config.setPassword(database.getPassword());
         config.setDriverClassName(database.getDriverClassName());
-        try(var datasource = new HikariDataSource(config)) {
-            try(var connection = datasource.getConnection()){
-                connection.createStatement().execute("DROP TABLE account;");
-                connection.createStatement().execute("DROP TABLE flyway_schema_history;");
+        try (var datasource = new HikariDataSource(config)) {
+            try (var connection = datasource.getConnection()) {
+                connection.createStatement().execute("DROP TABLE account");
+                connection.createStatement().execute("DROP TABLE flyway_schema_history");
             }
         }
     }
@@ -77,15 +77,15 @@ public class AccountRepositoryJPAServiceTest {
         final var alice = dao.createAccount("Alice", BigDecimal.valueOf(1000L));
         final var bob = dao.createAccount("Bob", BigDecimal.valueOf(2000L));
 
-        final var totals = new LinkedList<BigDecimal>();
+        final var totals = new LinkedList<Future<BigDecimal>>();
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             for (int i = 0; i < 100; i++) {
                 executor.submit(() -> dao.moveAmountSerializableLocking(alice, bob, BigDecimal.valueOf(1L)));
-                if( i % 10 == 0) {
-                    executor.submit(() -> {
-                        totals.add(dao.getTotalBalancesCommitted());
-                    });
+                if (i % 10 == 0) {
+                    totals.add(executor.submit(() ->
+                            dao.getTotalBalancesCommitted()
+                    ));
                 }
             }
 
@@ -96,7 +96,13 @@ public class AccountRepositoryJPAServiceTest {
         assertEquals(900L, dao.getBalance(alice).longValue());
         assertEquals(2100L, dao.getBalance(bob).longValue());
         assertEquals(3000L, dao.getTotalBalances().longValue());
-        assertEquals(Optional.of(30000L), totals.stream().reduce(BigDecimal::add).map(BigDecimal::longValue));
+        assertEquals(Optional.of(30000L), totals.stream().map(f -> {
+            try {
+                return f.get();
+            } catch (Exception e) {
+                return BigDecimal.ZERO;
+            }
+        }).reduce(BigDecimal::add).map(BigDecimal::longValue));
     }
 
     @Test
@@ -104,15 +110,15 @@ public class AccountRepositoryJPAServiceTest {
         final var alice = dao.createAccount("Alice", BigDecimal.valueOf(1000L));
         final var bob = dao.createAccount("Bob", BigDecimal.valueOf(2000L));
 
-        final var totals = new LinkedList<BigDecimal>();
+        final var totals = new LinkedList<Future<BigDecimal>>();
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             for (int i = 0; i < 100; i++) {
                 executor.submit(() -> dao.moveAmountSerializableRetrying(alice, bob, BigDecimal.valueOf(1L)));
-                if( i % 10 == 0) {
-                    executor.submit(() -> {
-                        totals.add(dao.getTotalBalancesCommitted());
-                    });
+                if (i % 10 == 0) {
+                    totals.add(executor.submit(() ->
+                            dao.getTotalBalancesCommitted()
+                    ));
                 }
             }
 
@@ -123,6 +129,12 @@ public class AccountRepositoryJPAServiceTest {
         assertEquals(900L, dao.getBalance(alice).longValue());
         assertEquals(2100L, dao.getBalance(bob).longValue());
         assertEquals(3000L, dao.getTotalBalances().longValue());
-        assertEquals(Optional.of(30000L), totals.stream().reduce(BigDecimal::add).map(BigDecimal::longValue));
+        assertEquals(Optional.of(30000L), totals.stream().map(f -> {
+            try {
+                return f.get();
+            } catch (Exception e) {
+                return BigDecimal.ZERO;
+            }
+        }).reduce(BigDecimal::add).map(BigDecimal::longValue));
     }
 }

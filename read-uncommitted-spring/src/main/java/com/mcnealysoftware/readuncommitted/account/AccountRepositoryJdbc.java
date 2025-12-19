@@ -18,7 +18,7 @@ public class AccountRepositoryJdbc {
     private final JdbcTemplate jdbcTemplate;
 
     @Autowired
-    public AccountRepositoryJdbc(DataSource dataSource){
+    public AccountRepositoryJdbc(DataSource dataSource) {
         this.jdbcTemplate = new JdbcTemplate(dataSource);
     }
 
@@ -28,7 +28,7 @@ public class AccountRepositoryJdbc {
         jdbcTemplate.update(
                 con -> {
                     var ps = con.prepareStatement(
-                            "INSERT INTO account (name, balance) VALUES (?, ?);", PreparedStatement.RETURN_GENERATED_KEYS);
+                            "INSERT INTO account (name, balance) VALUES (?, ?)", PreparedStatement.RETURN_GENERATED_KEYS);
                     ps.setString(1, name);
                     ps.setBigDecimal(2, balance);
                     return ps;
@@ -38,27 +38,27 @@ public class AccountRepositoryJdbc {
 
     @Transactional(readOnly = true, isolation = Isolation.READ_UNCOMMITTED)
     public BigDecimal getBalance(long accountId) {
-        return jdbcTemplate.queryForObject("SELECT balance FROM account WHERE id = ?;", BigDecimal.class, accountId);
+        return jdbcTemplate.queryForObject("SELECT balance FROM account WHERE id = ?", BigDecimal.class, accountId);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
     public BigDecimal getBalanceCommitted(long accountId) {
-        return jdbcTemplate.queryForObject("SELECT balance FROM account WHERE id = ?;", BigDecimal.class, accountId);
+        return jdbcTemplate.queryForObject("SELECT balance FROM account WHERE id = ?", BigDecimal.class, accountId);
     }
 
     @Transactional(readOnly = false, isolation = Isolation.READ_UNCOMMITTED)
     public void moveAmount(long fromAccountId, long toAccountId, BigDecimal amount) {
-        jdbcTemplate.update("UPDATE account SET balance = balance - ? WHERE id = ?;", amount, fromAccountId);
-        jdbcTemplate.update("UPDATE account SET balance = balance + ? WHERE id = ?;", amount, toAccountId);
+        jdbcTemplate.update("UPDATE account SET balance = balance - ? WHERE id = ?", amount, fromAccountId);
+        jdbcTemplate.update("UPDATE account SET balance = balance + ? WHERE id = ?", amount, toAccountId);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.READ_UNCOMMITTED)
     public BigDecimal getTotalBalances() {
-        return jdbcTemplate.queryForObject("SELECT SUM(balance) FROM account;", BigDecimal.class);
+        return jdbcTemplate.queryForObject("SELECT SUM(balance) FROM account", BigDecimal.class);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
     public BigDecimal getTotalBalancesCommitted() {
-        return jdbcTemplate.queryForObject("SELECT SUM(balance) FROM account;", BigDecimal.class);
+        return jdbcTemplate.queryForObject("SELECT SUM(balance) FROM account", BigDecimal.class);
     }
 }

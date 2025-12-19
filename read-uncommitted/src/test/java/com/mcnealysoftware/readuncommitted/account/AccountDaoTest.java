@@ -15,6 +15,7 @@ import java.util.LinkedList;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,14 +28,14 @@ public class AccountDaoTest {
     }
 
     private void setup(CheckedConsumer<DataSource> f) throws SQLException, InterruptedException {
-        try(final var mysql = new MySQLContainer(DockerImageName.parse("mysql:8.0.36"))) {
+        try (final var mysql = new MySQLContainer(DockerImageName.parse("mysql:8.0.36"))) {
             mysql.start();
             final var config = new HikariConfig();
             config.setJdbcUrl(mysql.getJdbcUrl());
             config.setUsername(mysql.getUsername());
             config.setPassword(mysql.getPassword());
             config.setDriverClassName(mysql.getDriverClassName());
-            try(var datasource = new HikariDataSource(config)) {
+            try (var datasource = new HikariDataSource(config)) {
                 final var flyway = Flyway.configure()
                         .dataSource(datasource).locations("classpath:schema").load();
                 flyway.migrate();
@@ -67,7 +68,7 @@ public class AccountDaoTest {
             dao.moveAmount(alice, bob, BigDecimal.valueOf(100L));
 
             assertEquals(900L, dao.getBalance(alice).longValue());
-            assertEquals( 2100L, dao.getBalance(bob).longValue());
+            assertEquals(2100L, dao.getBalance(bob).longValue());
             assertEquals(3000L, dao.getTotalBalances().longValue());
         });
     }
@@ -80,15 +81,13 @@ public class AccountDaoTest {
             final var alice = dao.createAccount("Alice", BigDecimal.valueOf(1000L));
             final var bob = dao.createAccount("Bob", BigDecimal.valueOf(2000L));
 
-            final var totals = new LinkedList<BigDecimal>();
+            final var totals = new LinkedList<Future<BigDecimal>>();
 
             try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
                 for (int i = 0; i < 100; i++) {
                     executor.submit(() -> dao.moveAmount(alice, bob, BigDecimal.valueOf(1L)));
-                    if( i % 10 == 0) {
-                        executor.submit(() -> {
-                            totals.add(dao.getTotalBalances());
-                        });
+                    if (i % 10 == 0) {
+                        totals.add(executor.submit(dao::getTotalBalances));
                     }
                 }
 
@@ -99,7 +98,13 @@ public class AccountDaoTest {
             assertEquals(900L, dao.getBalance(alice).longValue());
             assertEquals(2100L, dao.getBalance(bob).longValue());
             assertEquals(3000L, dao.getTotalBalances().longValue());
-            assertNotEquals(Optional.of(30000L), totals.stream().reduce(BigDecimal::add).map(BigDecimal::longValue));
+            assertNotEquals(Optional.of(30000L), totals.stream().map(f -> {
+                try {
+                    return f.get();
+                } catch (Exception e) {
+                    return BigDecimal.ZERO;
+                }
+            }).reduce(BigDecimal::add).map(BigDecimal::longValue));
         });
     }
 
@@ -111,15 +116,13 @@ public class AccountDaoTest {
             final var alice = dao.createAccount("Alice", BigDecimal.valueOf(1000L));
             final var bob = dao.createAccount("Bob", BigDecimal.valueOf(2000L));
 
-            final var totals = new LinkedList<BigDecimal>();
+            final var totals = new LinkedList<Future<BigDecimal>>();
 
             try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
                 for (int i = 0; i < 100; i++) {
                     executor.submit(() -> dao.moveAmount(alice, bob, BigDecimal.valueOf(1L)));
-                    if( i % 10 == 0) {
-                        executor.submit(() -> {
-                            totals.add(dao.getTotalBalances());
-                        });
+                    if (i % 10 == 0) {
+                        totals.add(executor.submit(dao::getTotalBalances));
                     }
                 }
 
@@ -130,7 +133,13 @@ public class AccountDaoTest {
             assertEquals(900L, dao.getBalance(alice).longValue());
             assertEquals(2100L, dao.getBalance(bob).longValue());
             assertEquals(3000L, dao.getTotalBalances().longValue());
-            assertEquals(Optional.of(30000L), totals.stream().reduce(BigDecimal::add).map(BigDecimal::longValue));
+            assertEquals(Optional.of(30000L), totals.stream().map(f -> {
+                try {
+                    return f.get();
+                } catch (Exception e) {
+                    return BigDecimal.ZERO;
+                }
+            }).reduce(BigDecimal::add).map(BigDecimal::longValue));
         });
     }
 }

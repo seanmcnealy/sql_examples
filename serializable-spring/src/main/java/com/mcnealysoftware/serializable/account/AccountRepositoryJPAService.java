@@ -24,30 +24,20 @@ public class AccountRepositoryJPAService {
         return account.getId();
     }
 
-    @Transactional(readOnly = true, isolation = Isolation.READ_UNCOMMITTED)
+    @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
     public BigDecimal getBalance(long accountId) {
         return accountRepository.findById(accountId).get().getBalance();
     }
 
-    @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
-    public BigDecimal getBalanceCommitted(long accountId) {
-        return accountRepository.findById(accountId).get().getBalance();
-    }
-
-    @Transactional(readOnly = false, isolation = Isolation.READ_UNCOMMITTED)
+    @Transactional(readOnly = false, isolation = Isolation.READ_COMMITTED)
     public void moveAmount(long fromAccountId, long toAccountId, BigDecimal amount) {
         accountRepository.moveAmount(fromAccountId, amount.negate());
         accountRepository.moveAmount(toAccountId, amount);
     }
 
-    @Transactional(readOnly = false, isolation = Isolation.SERIALIZABLE)
-    public void moveAmountSerializableLocking(long fromAccountId, long toAccountId, BigDecimal amount) {
-        final var fromAccount = accountRepository.findByIdWithPessimisticWriteLock(fromAccountId).get();
-        fromAccount.setBalance(fromAccount.getBalance().subtract(amount));
-        final var toAccount = accountRepository.findByIdWithPessimisticWriteLock(toAccountId).get();
-        toAccount.setBalance(toAccount.getBalance().add(amount));
-    }
-
+    /**
+     * This is a WRONG example. But it works based on just massively retrying deadlocked transactions.
+     */
     @Retryable(maxAttempts = 100, backoff = @Backoff(0))
     @Transactional(readOnly = false, isolation = Isolation.SERIALIZABLE)
     public void moveAmountSerializableRetrying(long fromAccountId, long toAccountId, BigDecimal amount) {
@@ -55,6 +45,23 @@ public class AccountRepositoryJPAService {
         fromAccount.setBalance(fromAccount.getBalance().subtract(amount));
         final var toAccount = accountRepository.findById(toAccountId).get();
         toAccount.setBalance(toAccount.getBalance().add(amount));
+    }
+
+    /**
+     * Not the easiest way to increase or decrease values, but still an example for codes that may actually
+     * require reading, processing, and writing to the database. This required a special call to the repository
+     * to
+     */
+    @Transactional(readOnly = false, isolation = Isolation.SERIALIZABLE)
+    public void moveAmountSerializableLocking(long fromAccountId, long toAccountId, BigDecimal amount) {
+        if (fromAccountId <= toAccountId) {
+            final var fromAccount = accountRepository.findByIdWithPessimisticWriteLock(fromAccountId).get();
+            fromAccount.setBalance(fromAccount.getBalance().subtract(amount));
+            final var toAccount = accountRepository.findByIdWithPessimisticWriteLock(toAccountId).get();
+            toAccount.setBalance(toAccount.getBalance().add(amount));
+        } else {
+            moveAmountSerializableLocking(toAccountId, fromAccountId, amount.negate());
+        }
     }
 
     @Transactional(readOnly = true, isolation = Isolation.READ_UNCOMMITTED)

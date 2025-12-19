@@ -19,9 +19,7 @@ import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -31,6 +29,8 @@ public class AccountRepositoryEntityManagerTest {
 
     @Container
     private static final MySQLContainer database = new MySQLContainer(DockerImageName.parse("mysql:8.0.36"));
+    @Autowired
+    AccountRepositoryEntityManager dao;
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
@@ -40,9 +40,6 @@ public class AccountRepositoryEntityManagerTest {
         registry.add("spring.datasource.driver-class-name", database::getDriverClassName);
     }
 
-    @Autowired
-    AccountRepositoryEntityManager dao;
-
     @BeforeEach
     void setUp() {
         final var config = new HikariConfig();
@@ -50,7 +47,7 @@ public class AccountRepositoryEntityManagerTest {
         config.setUsername(database.getUsername());
         config.setPassword(database.getPassword());
         config.setDriverClassName(database.getDriverClassName());
-        try(var datasource = new HikariDataSource(config)) {
+        try (var datasource = new HikariDataSource(config)) {
             final var flyway = Flyway.configure()
                     .dataSource(datasource).locations("classpath:schema").load();
             flyway.migrate();
@@ -64,10 +61,10 @@ public class AccountRepositoryEntityManagerTest {
         config.setUsername(database.getUsername());
         config.setPassword(database.getPassword());
         config.setDriverClassName(database.getDriverClassName());
-        try(var datasource = new HikariDataSource(config)) {
-            try(var connection = datasource.getConnection()){
-                connection.createStatement().execute("DROP TABLE account;");
-                connection.createStatement().execute("DROP TABLE flyway_schema_history;");
+        try (var datasource = new HikariDataSource(config)) {
+            try (var connection = datasource.getConnection()) {
+                connection.createStatement().execute("DROP TABLE account");
+                connection.createStatement().execute("DROP TABLE flyway_schema_history");
             }
         }
     }
@@ -82,20 +79,20 @@ public class AccountRepositoryEntityManagerTest {
     }
 
     @Test
-    void createAccountTestConcurrentReadCommitted() throws InterruptedException {
+    void createAccountTestConcurrentReadCommitted() throws InterruptedException, ExecutionException {
         final var names = List.of("Alice", "Bob", "Charlie", "David", "Eddie", "Frank", "George", "Harry", "Ivan", "John");
 
-        final var totals = new LinkedList<List<Long>>();
+        final var totals = new LinkedList<Future<List<Long>>>();
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             for (int i = 0; i < 100; i++) {
                 final int finalI = i;
                 executor.submit(() -> dao.createAccount(names.get(finalI % names.size()), BigDecimal.valueOf(1000L)));
-                if( i % 10 == 0) {
-                    executor.submit(() -> {
+                if (i % 10 == 0) {
+                    totals.add(executor.submit(() -> {
                         final var accounts = dao.getAccounts(0, 100);
-                        totals.add(List.of((long) accounts.get().count(), accounts.getTotalElements()));
-                    });
+                        return List.of(accounts.get().count(), accounts.getTotalElements());
+                    }));
                 }
             }
 
@@ -107,8 +104,8 @@ public class AccountRepositoryEntityManagerTest {
         assertEquals(100, accounts.get().count());
 
         var allEqual = true;
-        for(int i = 1; i < totals.size(); i++) {
-            if (totals.get(i).get(0) != totals.get(i).get(1)) {
+        for (int i = 1; i < totals.size(); i++) {
+            if (totals.get(i).get().get(0) != totals.get(i).get().get(1)) {
                 allEqual = false;
                 break;
             }
@@ -117,20 +114,20 @@ public class AccountRepositoryEntityManagerTest {
     }
 
     @Test
-    void createAccountTestConcurrentRepeatableRead() throws InterruptedException {
+    void createAccountTestConcurrentRepeatableRead() throws InterruptedException, ExecutionException {
         final var names = List.of("Alice", "Bob", "Charlie", "David", "Eddie", "Frank", "George", "Harry", "Ivan", "John");
 
-        final var totals = new LinkedList<List<Long>>();
+        final var totals = new LinkedList<Future<List<Long>>>();
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             for (int i = 0; i < 100; i++) {
                 final int finalI = i;
                 executor.submit(() -> dao.createAccount(names.get(finalI % names.size()), BigDecimal.valueOf(1000L)));
-                if( i % 10 == 0) {
-                    executor.submit(() -> {
+                if (i % 10 == 0) {
+                    totals.add(executor.submit(() -> {
                         final var accounts = dao.getAccountsRepeatableRead(0, 100);
-                        totals.add(List.of((long) accounts.get().count(), accounts.getTotalElements()));
-                    });
+                        return List.of(accounts.get().count(), accounts.getTotalElements());
+                    }));
                 }
             }
 
@@ -141,6 +138,8 @@ public class AccountRepositoryEntityManagerTest {
         final var accounts = dao.getAccounts(0, 200);
         assertEquals(100, accounts.get().count());
 
-        totals.forEach(t -> assertEquals(t.get(0), t.get(1)));
+        for (Future<List<Long>> t : totals) {
+            assertEquals(t.get().get(0), t.get().get(1));
+        }
     }
 }

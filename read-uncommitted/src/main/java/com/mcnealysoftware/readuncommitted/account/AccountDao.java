@@ -8,14 +8,16 @@ import java.sql.Statement;
 
 /**
  * DAO for accounts and their balances. Allows for creating accounts, getting balances, and moving money between accounts.
- * @param dataSource Database configuration that creates Connections.
+ *
+ * @param dataSource     Database configuration that creates Connections.
  * @param isolationLevel This one is weird as a parameter, but for this example we want to test different isolation levels.
  */
 public record AccountDao(DataSource dataSource, int isolationLevel) {
 
     /**
      * Creates a new account.
-     * @param name Something to identify the account, but not important.
+     *
+     * @param name    Something to identify the account, but not important.
      * @param balance Initial balance.
      * @return Account ID.
      */
@@ -24,7 +26,7 @@ public record AccountDao(DataSource dataSource, int isolationLevel) {
             connection.setAutoCommit(false);
             connection.setReadOnly(false);
             connection.setTransactionIsolation(isolationLevel);
-            final var statement = connection.prepareStatement("INSERT INTO account (name, balance) VALUES (?, ?);", Statement.RETURN_GENERATED_KEYS);
+            final var statement = connection.prepareStatement("INSERT INTO account (name, balance) VALUES (?, ?)", Statement.RETURN_GENERATED_KEYS);
             statement.setString(1, name);
             statement.setBigDecimal(2, balance);
             statement.executeUpdate();
@@ -47,7 +49,7 @@ public record AccountDao(DataSource dataSource, int isolationLevel) {
             connection.setReadOnly(true);
             connection.setTransactionIsolation(isolationLevel);
 
-            final var statement = connection.prepareStatement("SELECT balance FROM account WHERE id = ?;");
+            final var statement = connection.prepareStatement("SELECT balance FROM account WHERE id = ?");
             statement.setLong(1, accountId);
             final var resultSet = statement.executeQuery();
             resultSet.next();
@@ -94,7 +96,7 @@ public record AccountDao(DataSource dataSource, int isolationLevel) {
             connection.setReadOnly(true);
             connection.setTransactionIsolation(isolationLevel);
 
-            final var statement = connection.prepareStatement("SELECT SUM(balance) FROM account;");
+            final var statement = connection.prepareStatement("SELECT SUM(balance) FROM account");
             final var resultSet = statement.executeQuery();
             resultSet.next();
             final var id = resultSet.getBigDecimal(1);

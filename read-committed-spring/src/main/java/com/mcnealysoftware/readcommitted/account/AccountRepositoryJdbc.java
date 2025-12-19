@@ -21,7 +21,7 @@ public class AccountRepositoryJdbc {
     private final JdbcTemplate jdbcTemplate;
 
     @Autowired
-    public AccountRepositoryJdbc(DataSource dataSource){
+    public AccountRepositoryJdbc(DataSource dataSource) {
         this.jdbcTemplate = new JdbcTemplate(dataSource);
     }
 
@@ -31,7 +31,7 @@ public class AccountRepositoryJdbc {
         jdbcTemplate.update(
                 con -> {
                     var ps = con.prepareStatement(
-                            "INSERT INTO account (name, balance) VALUES (?, ?);", PreparedStatement.RETURN_GENERATED_KEYS);
+                            "INSERT INTO account (name, balance) VALUES (?, ?)", PreparedStatement.RETURN_GENERATED_KEYS);
                     ps.setString(1, name);
                     ps.setBigDecimal(2, balance);
                     return ps;
@@ -41,23 +41,23 @@ public class AccountRepositoryJdbc {
 
     @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
     public Page<Account> getAccounts(long page, long pageSize) {
-        final var accounts = jdbcTemplate.query("SELECT id, name, balance FROM account LIMIT ? OFFSET ?;",
+        final var accounts = jdbcTemplate.query("SELECT id, name, balance FROM account LIMIT ? OFFSET ?",
                 new AccountRowMapper(),
                 pageSize,
                 page * pageSize
         );
-        final var total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM account;", Long.class);
+        final var total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM account", Long.class);
         return new PageImpl<>(accounts, Pageable.ofSize((int) 1), total);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public Page<Account> getAccountsRepeatableRead(long page, long pageSize) {
-        final var accounts = jdbcTemplate.query("SELECT id, name, balance FROM account LIMIT ? OFFSET ?;",
+        final var accounts = jdbcTemplate.query("SELECT id, name, balance FROM account LIMIT ? OFFSET ?",
                 new AccountRowMapper(),
                 pageSize,
                 page * pageSize
         );
-        final var total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM account;", Long.class);
+        final var total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM account", Long.class);
         return new PageImpl<>(accounts, Pageable.ofSize((int) 1), total);
     }
 }
