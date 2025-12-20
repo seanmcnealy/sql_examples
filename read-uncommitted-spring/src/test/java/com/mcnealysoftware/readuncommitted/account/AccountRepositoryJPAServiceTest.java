@@ -118,13 +118,7 @@ public class AccountRepositoryJPAServiceTest {
         assertEquals(900L, dao.getBalance(alice).longValue());
         assertEquals(2100L, dao.getBalance(bob).longValue());
         assertEquals(3000L, dao.getTotalBalances().longValue());
-        assertNotEquals(Optional.of(30000L), totals.stream().map(f -> {
-            try {
-                return f.get();
-            } catch (Exception e) {
-                return BigDecimal.ZERO;
-            }
-        }).reduce(BigDecimal::add).map(BigDecimal::longValue));
+        assertNotEquals(Optional.of(30000L), totals.stream().map(this::resolveFuture).reduce(BigDecimal::add).map(BigDecimal::longValue));
     }
 
     @Test
@@ -151,12 +145,14 @@ public class AccountRepositoryJPAServiceTest {
         assertEquals(900L, dao.getBalance(alice).longValue());
         assertEquals(2100L, dao.getBalance(bob).longValue());
         assertEquals(3000L, dao.getTotalBalances().longValue());
-        assertEquals(Optional.of(30000L), totals.stream().map(f -> {
-            try {
-                return f.get();
-            } catch (Exception e) {
-                return BigDecimal.ZERO;
-            }
-        }).reduce(BigDecimal::add).map(BigDecimal::longValue));
+        assertEquals(Optional.of(30000L), totals.stream().map(this::resolveFuture).reduce(BigDecimal::add).map(BigDecimal::longValue));
+    }
+
+    private BigDecimal resolveFuture(Future<BigDecimal> f) {
+        try {
+            return f.get();
+        } catch (Exception e) {
+            return BigDecimal.ZERO;
+        }
     }
 }
